@@ -14,16 +14,18 @@ func main() {
 
 	connection, err := amqp.Dial(connectString)
 	if err != nil {
-		fmt.Printf("error creaing connection to RabbitMQ: %v", err)
+		fmt.Printf("error creating connection to RabbitMQ: %v", err)
+		os.Exit(1)
 	}
 	defer connection.Close()
 
-	fmt.Println("Connection successful!!")
+	fmt.Println("Connection Successful!!")
 
+	// wait for ctrl+c
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt)
 	<-signalChan
 
-	fmt.Println("Program shutting down")
+	fmt.Println("\nProgram shutting down")
 	os.Exit(1)
 }
