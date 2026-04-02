@@ -32,15 +32,13 @@ func main() {
 		log.Fatalf("could not get user name: %v", err)
 	}
 
-	_, _, err = pubsub.DeclareAndBind(conn, routing.ExchangePerilDirect, fmt.Sprintf("pause.%s", username), "pause", pubsub.SimpleQueueType{
+	gs := gamelogic.NewGameState(username)
+
+	pubsub.SubscribeJSON(conn, routing.ExchangePerilDirect, fmt.Sprintf("pause.%s", username), routing.PauseKey, pubsub.SimpleQueueType{
 		Durable:   false,
 		Transient: true,
-	})
-	if err != nil {
-		log.Fatalf("could not bind queue: %v", err)
-	}
+	}, handlerPause(gs))
 
-	gameState := gamelogic.NewGameState(username)
 	for {
 		cmd := gamelogic.GetInput()
 		if len(cmd) == 0 {
@@ -49,21 +47,21 @@ func main() {
 
 		switch cmd[0] {
 		case "spawn":
-			err = gameState.CommandSpawn(cmd)
+			err = gs.CommandSpawn(cmd)
 			if err != nil {
 				log.Printf("%v", err)
 				continue
 			}
 
 		case "move":
-			_, err := gameState.CommandMove(cmd)
+			_, err := gs.CommandMove(cmd)
 			if err != nil {
 				log.Printf("%v", err)
 				continue
 			}
 
 		case "status":
-			gameState.CommandStatus()
+			gs.CommandStatus()
 
 		case "help":
 			gamelogic.PrintClientHelp()
@@ -79,5 +77,12 @@ func main() {
 			log.Println("Command not recognized")
 			continue
 		}
+	}
+}
+
+func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
+	return func(ps routing.PlayingState) {
+		defer fmt.Print("> ")
+		gs.HandlePause(routing.PlayingState{})
 	}
 }
