@@ -7,82 +7,70 @@ import (
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
-	"github.com/rabbitmq/amqp091-go"
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 func main() {
 	fmt.Println("Starting Peril client...")
-
 	const rabbitConnString = "amqp://guest:guest@localhost:5672/"
 
-	conn, err := amqp091.Dial(rabbitConnString)
+	conn, err := amqp.Dial(rabbitConnString)
 	if err != nil {
 		log.Fatalf("could not connect to RabbitMQ: %v", err)
 	}
 	defer conn.Close()
-	fmt.Println("Peril game server connected to RabbitMQ!")
-
-	_, err = conn.Channel()
-	if err != nil {
-		log.Fatalf("could not create channel: %v", err)
-	}
+	fmt.Println("Peril game client connected to RabbitMQ!")
 
 	username, err := gamelogic.ClientWelcome()
 	if err != nil {
-		log.Fatalf("could not get user name: %v", err)
+		log.Fatalf("could not get username: %v", err)
 	}
-
 	gs := gamelogic.NewGameState(username)
 
-	pubsub.SubscribeJSON(conn, routing.ExchangePerilDirect, fmt.Sprintf("pause.%s", username), routing.PauseKey, pubsub.SimpleQueueType{
-		Durable:   false,
-		Transient: true,
-	}, handlerPause(gs))
+	err = pubsub.SubscribeJSON(
+		conn,
+		routing.ExchangePerilDirect,
+		routing.PauseKey+"."+gs.GetUsername(),
+		routing.PauseKey,
+		pubsub.SimpleQueueTransient,
+		handlerPause(gs),
+	)
+	if err != nil {
+		log.Fatalf("could not subscribe to pause: %v", err)
+	}
 
 	for {
-		cmd := gamelogic.GetInput()
-		if len(cmd) == 0 {
+		words := gamelogic.GetInput()
+		if len(words) == 0 {
 			continue
 		}
-
-		switch cmd[0] {
-		case "spawn":
-			err = gs.CommandSpawn(cmd)
-			if err != nil {
-				log.Printf("%v", err)
-				continue
-			}
-
+		switch words[0] {
 		case "move":
-			_, err := gs.CommandMove(cmd)
+			_, err := gs.CommandMove(words)
 			if err != nil {
-				log.Printf("%v", err)
+				fmt.Println(err)
 				continue
 			}
 
+			// TODO: publish the move
+		case "spawn":
+			err = gs.CommandSpawn(words)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
 		case "status":
 			gs.CommandStatus()
-
 		case "help":
 			gamelogic.PrintClientHelp()
-
 		case "spam":
-			log.Println("Spamming not allowed yet!")
-
+			// TODO: publish n malicious logs
+			fmt.Println("Spamming not allowed yet!")
 		case "quit":
 			gamelogic.PrintQuit()
 			return
-
 		default:
-			log.Println("Command not recognized")
-			continue
+			fmt.Println("unknown command")
 		}
-	}
-}
-
-func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
-	return func(ps routing.PlayingState) {
-		defer fmt.Print("> ")
-		gs.HandlePause(routing.PlayingState{})
 	}
 }
