@@ -6,6 +6,7 @@ import (
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
+	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
 	"github.com/rabbitmq/amqp091-go"
 )
 
@@ -31,7 +32,7 @@ func main() {
 		log.Fatalf("could not get user name: %v", err)
 	}
 
-	_, _, err = pubsub.DeclareAndBind(conn, "peril_direct", fmt.Sprintf("pause.%s", username), "pause", pubsub.SimpleQueueType{
+	_, _, err = pubsub.DeclareAndBind(conn, routing.ExchangePerilDirect, fmt.Sprintf("pause.%s", username), "pause", pubsub.SimpleQueueType{
 		Durable:   false,
 		Transient: true,
 	})

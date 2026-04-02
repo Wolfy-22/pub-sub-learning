@@ -40,6 +40,11 @@ func main() {
 	}
 	fmt.Println("Pause message sent!")
 
+	_, _, err = pubsub.DeclareAndBind(conn, routing.ExchangePerilTopic, routing.GameLogSlug, "game_logs.*", pubsub.SimpleQueueType{
+		Durable:   true,
+		Transient: false,
+	})
+
 	for {
 		cmd := gamelogic.GetInput()
 		if len(cmd) == 0 {
