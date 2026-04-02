@@ -82,7 +82,7 @@ func main() {
 			}
 			fmt.Println("Resume message sent!")
 
-		case "exit":
+		case "quit":
 			log.Println("Exiting server")
 			return
 
