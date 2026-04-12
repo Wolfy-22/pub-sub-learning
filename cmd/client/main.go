@@ -27,7 +27,7 @@ func main() {
 	}
 	gs := gamelogic.NewGameState(username)
 
-	publishCh, err := conn.Channel()
+	ch, err := conn.Channel()
 	if err != nil {
 		log.Fatalf("could not create channel: %v", err)
 	}
@@ -50,8 +50,23 @@ func main() {
 		fmt.Sprintf("%s.%s", routing.ArmyMovesPrefix, gs.GetUsername()),
 		fmt.Sprintf("%s.*", routing.ArmyMovesPrefix),
 		pubsub.SimpleQueueTransient,
-		handlerMove(gs),
+		handlerMove(gs, ch),
 	)
+	if err != nil {
+		log.Fatalf("could not subscribe to army moves: %v", err)
+	}
+
+	err = pubsub.SubscribeJSON(
+		conn,
+		routing.ExchangePerilTopic,
+		routing.WarRecognitionsPrefix,
+		routing.WarRecognitionsPrefix+".*",
+		pubsub.SimpleQueueDurable,
+		handlerWar(gs),
+	)
+	if err != nil {
+		log.Fatalf("could not subscribe to war declarations: %v", err)
+	}
 
 	for {
 		words := gamelogic.GetInput()
@@ -67,7 +82,7 @@ func main() {
 			}
 			fmt.Println("Publishing move")
 			pubsub.PublishJSON(
-				publishCh,
+				ch,
 				routing.ExchangePerilTopic,
 				fmt.Sprintf("%s.%s", routing.ArmyMovesPrefix, gs.GetUsername()),
 				move,
