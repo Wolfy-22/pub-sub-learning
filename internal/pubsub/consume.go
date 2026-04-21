@@ -1,12 +1,15 @@
 package pubsub
 
 import (
+	"bytes"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
-	"log"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
+
+type Acktype int
 
 type SimpleQueueType int
 
@@ -15,12 +18,10 @@ const (
 	SimpleQueueTransient
 )
 
-type Acktype int
-
 const (
 	Ack Acktype = iota
-	NackRequeue
 	NackDiscard
+	NackRequeue
 )
 
 func SubscribeJSON[T any](
@@ -30,6 +31,55 @@ func SubscribeJSON[T any](
 	key string,
 	queueType SimpleQueueType,
 	handler func(T) Acktype,
+) error {
+	return subscribe[T](
+		conn,
+		exchange,
+		queueName,
+		key,
+		queueType,
+		handler,
+		func(data []byte) (T, error) {
+			var target T
+			err := json.Unmarshal(data, &target)
+			return target, err
+		},
+	)
+}
+
+func SubscribeGob[T any](
+	conn *amqp.Connection,
+	exchange,
+	queueName,
+	key string,
+	queueType SimpleQueueType,
+	handler func(T) Acktype,
+) error {
+	return subscribe[T](
+		conn,
+		exchange,
+		queueName,
+		key,
+		queueType,
+		handler,
+		func(data []byte) (T, error) {
+			buffer := bytes.NewBuffer(data)
+			decoder := gob.NewDecoder(buffer)
+			var target T
+			err := decoder.Decode(&target)
+			return target, err
+		},
+	)
+}
+
+func subscribe[T any](
+	conn *amqp.Connection,
+	exchange,
+	queueName,
+	key string,
+	queueType SimpleQueueType,
+	handler func(T) Acktype,
+	unmarshaller func([]byte) (T, error),
 ) error {
 	ch, queue, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
 	if err != nil {
@@ -49,12 +99,6 @@ func SubscribeJSON[T any](
 		return fmt.Errorf("could not consume messages: %v", err)
 	}
 
-	unmarshaller := func(data []byte) (T, error) {
-		var target T
-		err := json.Unmarshal(data, &target)
-		return target, err
-	}
-
 	go func() {
 		defer ch.Close()
 		for msg := range msgs {
@@ -63,21 +107,14 @@ func SubscribeJSON[T any](
 				fmt.Printf("could not unmarshal message: %v\n", err)
 				continue
 			}
-			ack := handler(target)
-			switch ack {
+			switch handler(target) {
 			case Ack:
 				msg.Ack(false)
-				log.Println("Msg processed succefully")
-
-			case NackRequeue:
-				msg.Nack(false, true)
-				log.Println("Msg should be processed again")
-
 			case NackDiscard:
 				msg.Nack(false, false)
-				log.Println("Msg should be discarded")
+			case NackRequeue:
+				msg.Nack(false, true)
 			}
-
 		}
 	}()
 	return nil
@@ -101,7 +138,7 @@ func DeclareAndBind(
 		queueType != SimpleQueueDurable, // delete when unused
 		queueType != SimpleQueueDurable, // exclusive
 		false,                           // no-wait
-		amqp.Table{ // args
+		amqp.Table{
 			"x-dead-letter-exchange": "peril_dlx",
 		},
 	)
